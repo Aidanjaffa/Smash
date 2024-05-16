@@ -6,7 +6,7 @@ pygame.init()
 screen_width = 800
 screen_height = 600
 
-screen = pygame.display.set_mode((screen_width, screen_height))
+screen = pygame.display.set_mode((screen_width, screen_height), FULLSCREEN)
 
 pygame.display.update()
 
@@ -55,6 +55,8 @@ class Player(object):
         self.cooldown = 0
 
         self.color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255), 0)
+
+        self.afterImages = []
         pass
 
     def Draw(self, ID):
@@ -65,12 +67,16 @@ class Player(object):
             tint.fill((self.color[0], self.color[1], self.color[2], 0))
             screen.blit(self.sprites[self.facing][0], (self.pos[0] + scroll[0], self.pos[1] + scroll[1]))
             screen.blit(tint, (self.pos[0] + scroll[0], self.pos[1] + scroll[1]), special_flags=pygame.BLEND_RGBA_MULT)
+            if self.dashCount > 0:
+                self.afterImages.append([self.pos[0] + scroll[0], self.pos[1] + scroll[1], 255])
 
         elif self.Jump:
             tint = pygame.Surface((10 * 2, 16 * 2), pygame.SRCALPHA)
             tint.fill((self.color[0], self.color[1], self.color[2], 0))
             screen.blit(self.sprites[self.facing][1], (self.pos[0] + scroll[0], self.pos[1] + scroll[1]))
             screen.blit(tint, (self.pos[0] + scroll[0], self.pos[1] + scroll[1]), special_flags=pygame.BLEND_RGBA_MULT)
+            if self.dashCount > 0:
+                self.afterImages.append([self.pos[0] + scroll[0], self.pos[1] + scroll[1], 255])
 
         # this makes sure the sword is facing the right way when moving as the sword sprite is drawn seperatly
         # as to not be blended with the sprite itself
@@ -82,30 +88,7 @@ class Player(object):
         # Player hitbox
         self.rect = pygame.Rect(self.pos[0] + scroll[0], self.pos[1] + scroll[1], 20, 32)
 
-        # cooldown for the dash so you cant spam it
-        if self.cooldown > 0:
-            self.cooldown -= 1
-            self.dash = False
-
-        # this if enables dashing to happen
-        # the reason i set it up like this and not just set dash count is because lots
-        # of conditions need to be met in order for the dash not to bug out
-        if self.dash and self.dashCount == 0 and self.cooldown <= 0:
-            self.dashCount = 10
-            self.dash = False
-            self.cooldown = 30
-
-        # the dash is very simple, depending on which way the player is facing
-        # it will add to the players velocity
-        # once dashCount == 1 then self.vel[0] is set to 0 so you dont infintly dash
-        if self.dashCount > 0:
-            if self.facing == 1:
-                self.vel[0] -= 20
-            else:
-                self.vel[0] += 20
-            self.dashCount -= 1
-            if self.dashCount == 1:
-                self.vel[0] = 0
+        self.Dash(tint)
 
         # Updating the players positions based on the velocities
         self.pos[1] += self.vel[1]
@@ -120,26 +103,7 @@ class Player(object):
         self.pos[0] = (screen_width + self.pos[0]) % screen_width
         self.pos[1] = (screen_height + self.pos[1]) % screen_height
 
-        # Impact is if the player is touching this frame, colliding is in the last frame
-        # When the player lands for one frame impact will be true and colliding will be false
-        self.impact = False
-        for item in Map.rects:
-            if item.colliderect(self.rect):
-                self.impact = True
-
-        # This registers that the player his hit the floor at a given speed and will initiate the shake countdown
-        if self.impact and not self.colliding and self.vel[1] > 16:
-            self.impactCount = 10
-            self.shake = True
-
-        # if impactCount > 0 then it should shake the screen
-        if self.impactCount > 0:
-            self.impactCount -= 1
-            ScreenShake(10)
-            for key in controllers.keys():
-                controllers[key].rumble(0, 5, 5)
-            self.shake = False
-
+        self.Impact()
         # i put collide here so that at the end of the frame colliding gets updated
         # so its useful for the shaking stuff
         self.collide(ID)
@@ -162,6 +126,74 @@ class Player(object):
                     self.vel[1] -= 12
                     self.pos[1] -= 1
                     # self.colliding = False
+
+    def AfterImage(self, tint):
+        for sprite in self.afterImages:
+            screen.blit(self.sprites[self.facing][0], (sprite[0], sprite[1]))
+            screen.blit(tint, (sprite[0], sprite[1]), special_flags=pygame.BLEND_RGBA_MULT)
+            self.sprites[self.facing][0].set_alpha(sprite[2])
+            tint.set_alpha(sprite[2])
+            sprite[2] -= 10
+            if sprite[2] <= 0:
+                self.afterImages.remove(sprite)
+        pass
+
+    def Impact(self):
+        # Impact is if the player is touching this frame, colliding is in the last frame
+        # When the player lands for one frame impact will be true and colliding will be false
+        self.impact = False
+        for item in Map.rects:
+            if item.colliderect(self.rect):
+                self.impact = True
+
+        # This registers that the player his hit the floor at a given speed and will initiate the shake countdown
+        if self.impact and not self.colliding and self.vel[1] > 16:
+            self.impactCount = 10
+            self.shake = True
+
+        # if impactCount > 0 then it should shake the screen
+        if self.impactCount > 0:
+            self.impactCount -= 1
+            ScreenShake(10)
+            for key in controllers.keys():
+                controllers[key].rumble(0, 5, 5)
+            self.shake = False
+
+    def Dash(self, tint):
+        # After Image shit for when you dash
+        if len(self.afterImages) > 10:
+            self.afterImages.pop(0)
+        if len(self.afterImages) > 0:
+            self.AfterImage(tint)
+
+        if len(self.afterImages) == 0:
+            self.sprites[self.facing][0].set_alpha(255)
+
+        # cooldown for the dash so you cant spam it
+        if self.cooldown > 0:
+            self.cooldown -= 1
+            self.dash = False
+
+        # this if enables dashing to happen
+        # the reason i set it up like this and not just set dash count is because lots
+        # of conditions need to be met in order for the dash not to bug out
+        if self.dash and self.dashCount == 0 and self.cooldown <= 0:
+            self.dashCount = 10
+            self.dash = False
+            self.cooldown = 20
+
+        # the dash is very simple, depending on which way the player is facing
+        # it will add to the players velocity
+        # once dashCount == 1 then self.vel[0] is set to 0 so you dont infintly dash
+        if self.dashCount > 0:
+            if self.facing == 1:
+                self.vel[0] -= 20
+            else:
+                self.vel[0] += 20
+            self.dashCount -= 1
+            if self.dashCount == 1:
+                self.vel[0] = 0
+
 
 
 class map:
@@ -278,6 +310,7 @@ while not Exit:
                 players[0].Jump = False
 
         # independently handling each joystick object (you know this)
+        # 0 = A 1 = B 2 = X 3 = Y 4 = LB 5 = RB 6 = Select 7 = Start 8 = LStick 9 = RStick 10 = xbox button 11 =
         for keys in controllers.keys():
             if event.type == pygame.JOYBUTTONDOWN:
                 if controllers[keys].get_button(0):
@@ -313,7 +346,7 @@ while not Exit:
         if event.type == pygame.JOYDEVICEADDED:
             joy = pygame.joystick.Joystick(event.device_index)
             # joy.rumble(0, 0.7, 500)
-            playerDict[joy.get_instance_id()] = Player([100, 100])
+            playerDict[joy.get_instance_id()] = Player([100, -100])
 
             joysticks.append(joy)
             print("add", playerDict)
