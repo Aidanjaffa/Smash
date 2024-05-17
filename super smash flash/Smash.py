@@ -6,7 +6,7 @@ pygame.init()
 screen_width = 800
 screen_height = 600
 
-screen = pygame.display.set_mode((screen_width, screen_height), FULLSCREEN)
+screen = pygame.display.set_mode((screen_width, screen_height))
 
 pygame.display.update()
 
@@ -46,6 +46,7 @@ class Player(object):
         self.colliding = False
         self.shake = False
         self.dash = False
+        self.moving = False
 
         # 1 = Left 0 = Right
         self.facing = 1
@@ -160,39 +161,60 @@ class Player(object):
             self.shake = False
 
     def Dash(self, tint):
+        # THIS CODE IS FRAGILE ASF. Please try not to mess with it too much
+        # just incase heres an explanation
+
         # After Image shit for when you dash
+
+        # This block makes it so that when you are dashing it leaves behind after images that fade away
+        # it makes sure there are only 10 after images stored and it keeps it like a queue so FIFO and if it is
+        # > 0 that means dashing is occuring so the after image method is called
         if len(self.afterImages) > 10:
             self.afterImages.pop(0)
         if len(self.afterImages) > 0:
             self.AfterImage(tint)
 
+        # Fading by setting the alpha
         if len(self.afterImages) == 0:
             self.sprites[self.facing][0].set_alpha(255)
 
-        # cooldown for the dash so you cant spam it
+        # so when the dash button is pressed dash is set to true. now at this point the player is probably not dashing
+        # so dashCount is set to 10, if dash is true and we didnt check cooldown and dashCount it would continuously
+        # set dashcount to 10 and therefore the player would never stop
+        if self.dash and self.cooldown == 0 and self.dashCount <= 0:
+            self.dashCount = 10
+
+        # When dashCount is above 0. It'll start decrementing it frame by frame and adjust the players xvel to 20 in
+        # the corresponding direction. while dashcount is above 0, then the velocity will keep getting set until
+        # dashcount reaches 0. once that happens the cooldown starts
+
+        if self.dashCount > 0:
+            self.dashCount -= 1
+            if self.facing == 1:
+                self.vel[0] = -20
+            else:
+                self.vel[0] = 20
+
+            if self.dashCount == 0:
+                self.cooldown = 20
+
+        # Here the order of the code is very important and this is to ensure smooth movement if the player is holding
+        # a direction. When dash is true and cooldown is > 0 then the player xvel = 0 (this only occurs on the frame
+        # when the player stops dashing )however (and this is the jank
+        # i wrote) a new flag called moving is set to true or false down in the game loop depending on whether
+        # the player is moving. this means that the player wont just stop mid movement. I hope that makes sense
+        if self.dash and self.cooldown > 0:
+            self.vel[0] = 0
+            if self.moving:
+                if self.facing == 1:
+                    self.vel[0] = -5
+                else:
+                    self.vel[0] = 5
+
+        #cooldown for the dash so you cant spam it
         if self.cooldown > 0:
             self.cooldown -= 1
             self.dash = False
-
-        # this if enables dashing to happen
-        # the reason i set it up like this and not just set dash count is because lots
-        # of conditions need to be met in order for the dash not to bug out
-        if self.dash and self.dashCount == 0 and self.cooldown <= 0:
-            self.dashCount = 10
-            self.dash = False
-            self.cooldown = 20
-
-        # the dash is very simple, depending on which way the player is facing
-        # it will add to the players velocity
-        # once dashCount == 1 then self.vel[0] is set to 0 so you dont infintly dash
-        if self.dashCount > 0:
-            if self.facing == 1:
-                self.vel[0] -= 20
-            else:
-                self.vel[0] += 20
-            self.dashCount -= 1
-            if self.dashCount == 1:
-                self.vel[0] = 0
 
 
 
@@ -231,7 +253,7 @@ class map:
             y += 1
         pass
 
-    # i think pretty self explanatory
+    # i think pretty self-explanatory
     def load_map(self):
         f = open("assets/map.txt", "r")
         data = f.read()
@@ -257,7 +279,7 @@ def ScreenShake(screenshake):
 pygame.joystick.init()
 joysticks = [pygame.joystick.Joystick(x) for x in range(pygame.joystick.get_count())]
 
-players = [Player([x + 100, 100]) for x in range(pygame.joystick.get_count())]
+players = [Player([x + 500, 100]) for x in range(pygame.joystick.get_count())]
 controllers = {}
 playerDict = {}
 
@@ -304,13 +326,16 @@ while not Exit:
                 players[0].Jump = True
             if event.key == pygame.K_ESCAPE:
                 Exit = True
+            if event.key == pygame.K_c:
+                for key in playerDict.keys():
+                    playerDict[key].dash = True
 
         if event.type == pygame.KEYUP:
             if event.key == pygame.K_SPACE:
                 players[0].Jump = False
 
         # independently handling each joystick object (you know this)
-        # 0 = A 1 = B 2 = X 3 = Y 4 = LB 5 = RB 6 = Select 7 = Start 8 = LStick 9 = RStick 10 = xbox button 11 =
+        # 0 = A 1 = B 2 = X 3 = Y 4 = LB 5 = RB 6 = Select 7 = Start 8 = LStick 9 = RStick 10 = xbox
         for keys in controllers.keys():
             if event.type == pygame.JOYBUTTONDOWN:
                 if controllers[keys].get_button(0):
@@ -321,7 +346,6 @@ while not Exit:
                 if controllers[keys].get_button(1):
                     playerDict[keys].color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255), 255)
                 if controllers[keys].get_button(2):
-                    print("dash")
                     playerDict[keys].dash = True
 
             if event.type == pygame.JOYBUTTONUP:
@@ -337,16 +361,19 @@ while not Exit:
                     playerDict[keys].vel[0] = -5
                     # Facing 1 means going left
                     playerDict[keys].facing = 1
+                    playerDict[keys].moving = True
                 elif controllers[keys].get_axis(0) > 0.5:
                     playerDict[keys].vel[0] = 5
                     playerDict[keys].facing = 0
+                    playerDict[keys].moving = True
                 else:
                     playerDict[keys].vel[0] = 0
+                    playerDict[keys].moving = False
 
         if event.type == pygame.JOYDEVICEADDED:
             joy = pygame.joystick.Joystick(event.device_index)
-            # joy.rumble(0, 0.7, 500)
-            playerDict[joy.get_instance_id()] = Player([100, -100])
+            joy.rumble(0, 0.7, 500)
+            playerDict[joy.get_instance_id()] = Player([400, 100])
 
             joysticks.append(joy)
             print("add", playerDict)
