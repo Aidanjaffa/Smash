@@ -1,0 +1,20 @@
+html, body {
+    margin: 0;
+    height: 100%;
+    background-color: #1a1a1a;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+canvas {
+    background-color: rgb(99, 151, 151);
+    width: 80%;
+    aspect-ratio: 16 / 9;
+    /* crisp nearest-neighbour scaling to match pygame's pixel-art look */
+    image-rendering: pixelated;
+    outline: none;
+}
